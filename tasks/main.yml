@@ -1,0 +1,78 @@
+---
+
+- set_fact:
+    name: smtp_tls_CAfile
+    value: /etc/ssl/certs/ca-bundle.crt
+  when: ansible_os_family == 'RedHat'
+
+- set_fact:
+    name: smtp_tls_CAfile
+    value: /etc/ssl/certs/ca-certificates.crt
+  when: ansible_os_family == 'Debian'
+
+- name: Ensure that SMTPd banner doesn't leak information to allow targeted attacks
+  lineinfile:
+    path: '{{ postfix_config_file }}'
+    regexp: '^smtpd_banner ?= '
+    line: 'smtpd_banner = $myhostname ESMTP'
+
+- name: Configure postfix for all cases
+  lineinfile:
+    path: '{{ postfix_config_file }}'
+    regexp: '^{{ item.variable }} ?='
+    line: '{{ item.variable }} = {{ item.value }}'
+    state: present
+  with_items:
+    - variable: 'relayhost'
+      value: '[{{ smtp_host }}]:{{ smtp_port }}'
+
+- name: Configure postfix for auth cases
+  lineinfile:
+    path: '{{ postfix_config_file }}'
+    regexp: '^{{ item.variable }} ?='
+    line: '{{ item.variable }} = {{ item.value }}'
+    state: present
+  with_items:
+    - variable: 'smtp_sasl_auth_enable'
+      value: 'yes'
+
+    - variable: 'smtp_sasl_security_options'
+      value: 'noanonymous'
+
+    - variable: 'smtp_sasl_password_maps'
+      value: 'hash:{{ sasl_password_path }}'
+
+    - variable: 'smtp_use_tls'
+      value: '{{ smtp_use_tls | ternary("yes", "no") }}'
+
+    - variable: 'smtp_sasl_tls_security_options'
+      value: 'noanonymous'
+
+    - variable: 'smtp_tls_security_level'
+      value: 'encrypt'
+
+    - variable: 'smtp_tls_note_starttls_offer'
+      value: 'yes'
+
+    - variable: 'smtp_tls_CAfile'
+      value: '{{ smtp_tls_CAfile }}'
+
+    - variable: 'header_size_limit'
+      value: '{{ postfix_header_size_limit }}'
+  when: smtp_auth
+
+- name: Create sasl_passwd with SMTP authentication details
+  template:
+    src: sasl_passwd.j2
+    dest: '{{ sasl_password_path }}'
+    mode: 0600
+  when: smtp_auth
+
+- name: Trigger postman to read new password file
+  command: postmap hash:{{ sasl_password_path }}
+  when: smtp_auth
+
+- name: Restart postfix
+  service:
+    name: postfix
+    state: restarted
