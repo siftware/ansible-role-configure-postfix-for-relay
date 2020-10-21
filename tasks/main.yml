@@ -1,13 +1,9 @@
 ---
 
-- set_fact:
-    name: smtp_tls_CAfile
-    value: /etc/ssl/certs/ca-bundle.crt
+- set_fact: smtp_tls_CAfile="/etc/ssl/certs/ca-bundle.crt"
   when: ansible_os_family == 'RedHat'
 
-- set_fact:
-    name: smtp_tls_CAfile
-    value: /etc/ssl/certs/ca-certificates.crt
+- set_fact: smtp_tls_CAfile="/etc/ssl/certs/ca-certificates.crt"
   when: ansible_os_family == 'Debian'
 
 - name: Ensure that SMTPd banner doesn't leak information to allow targeted attacks
